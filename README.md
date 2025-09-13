@@ -28,6 +28,37 @@ See `specs/001-this-is-a/quickstart.md` for an end-to-end sample.
 - Transient errors (HTTP 429 and 5xx) automatically retry up to 3 attempts with exponential backoff + jitter. The retry respects `Retry-After` when present.
 - Errors still surface as typed exceptions with enriched context (`error_code`, `requestId`, `x-request-id`).
 
+## API Overview
+
+SnowpipeClient (control + ingest wiring)
+- `Task<string> GetHostnameAsync(...)` — Discover ingest host for the account.
+  - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#get-hostname
+- `Task ExchangeScopedTokenAsync(string hostname, ...)` — Exchange JWT for scoped token; sets ingest base URI.
+  - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#exchange-scoped-token
+- `Task<SnowpipeChannel> OpenChannelAsync(string database, string schema, string pipe, string channelName, string? offsetToken = null, Guid? requestId = null, bool dropOnDispose = false, ...)` — Create or open a channel; returns `SnowpipeChannel` with initial continuation token.
+  - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#open-channel
+- `Task<IDictionary<string, Models.ChannelStatus>> BulkGetChannelStatusAsync(string database, string schema, string pipe, IEnumerable<string> channelNames, ...)` — Bulk channel status lookup.
+  - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#bulk-get-channel-status
+- `Task DropChannelAsync(string database, string schema, string pipe, string channelName, ...)` — Drop a channel.
+  - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#drop-channel
+- `Task CloseChannelWhenCommittedAsync(string database, string schema, string pipe, string channelName, string continuationToken, ...)` — Polls bulk status until committed to the given token (used by channel disposal & helpers).
+
+Low-level appends (available but typically use SnowpipeChannel)
+- `Task<string> AppendRowsAsync(string database, string schema, string pipe, string channelName, string continuationToken, IEnumerable<string> ndjsonLines, ...)`
+- `Task<string> AppendRowsAsync<T>(..., IEnumerable<T> rows, ...)` — Serializes to NDJSON and splits payloads to respect 16MB.
+
+SnowpipeChannel (ergonomic per-channel API)
+- `Task<string> AppendRowsAsync(IEnumerable<string> ndjsonLines, ...)` — NDJSON lines; auto-splits to ≤16MB and updates `LatestContinuationToken`.
+- `Task<string> AppendRowsAsync<T>(IEnumerable<T> rows, ...)` — Generic rows; serialized to NDJSON, auto-splits, updates token.
+- `Task<string?> GetLatestCommittedOffsetTokenAsync(...)` — Convenience to fetch the latest committed offset for this channel.
+- `Task WaitForCommitAsync(string? token = null, ...)` — Wait until committed equals the given (or latest) token.
+- `Task DropAsync(...)` — Drop the channel.
+- `await using var channel = await client.OpenChannelAsync(..., dropOnDispose: true)` — On dispose: waits for commit and drops server-side; errors swallowed.
+
+Notes
+- Headers: account endpoints send `Authorization: Bearer <jwt>` + `X-Snowflake-Authorization-Token-Type: JWT`; ingest endpoints send `Authorization: Bearer <scoped>` + `X-Snowflake-Authorization-Token-Type: OAuth`.
+- Content types: token exchange uses `application/x-www-form-urlencoded`; append rows uses `application/x-ndjson` with `continuationToken` query.
+
 Example:
 ```csharp
 await using var channel = await client.OpenChannelAsync(

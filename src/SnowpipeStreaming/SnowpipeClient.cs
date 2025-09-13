@@ -26,6 +26,9 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     private string? _scopedToken;
     private Uri? _ingestBaseUri;
 
+    // Expose logger to internal collaborators (e.g., SnowpipeChannel) without leaking publicly.
+    internal ILogger? Logger => _logger;
+
     /// <summary>
     /// Creates a Snowpipe Streaming client bound to an account URL and caller-provided JWT.
     /// Uses the account host for control-plane calls and the discovered ingest host for data-plane calls.
@@ -400,6 +403,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
 
             if (DateTimeOffset.UtcNow - start > timeout)
             {
+                _logger?.LogWarning("Timeout waiting for commit for {Database}.{Schema}.{Pipe}.{Channel} token={Token}", database, schema, pipe, channelName, continuationToken);
                 throw new SnowpipeException($"Timeout waiting for channel '{channelName}' to commit up to provided token.", System.Net.HttpStatusCode.RequestTimeout);
             }
             await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
@@ -458,6 +462,10 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
                 _logger?.LogDebug("Retrying attempt {Attempt} after {Delay} due to status {Status}", attempt + 1, delay, code);
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 continue;
+            }
+            if (!resp.IsSuccessStatusCode)
+            {
+                _logger?.LogWarning("HTTP {Status} after {Attempts} attempt(s) for {Method} {Uri}", code, attempt, req.Method, req.RequestUri);
             }
             return (resp, body);
         }

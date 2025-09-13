@@ -118,8 +118,9 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
                 await WaitForCommitAsync().ConfigureAwait(false);
                 await DropAsync().ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
+                _client.Logger?.LogError(ex, "Error during SnowpipeChannel DisposeAsync cleanup (wait+drop) for {Database}.{Schema}.{Pipe}.{Channel}", Database, Schema, Pipe, Name);
                 // Swallow errors during disposal to avoid throwing from DisposeAsync.
             }
         }
@@ -137,8 +138,9 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
                 WaitForCommitAsync().GetAwaiter().GetResult();
                 _client.DropChannelAsync(Database, Schema, Pipe, Name).GetAwaiter().GetResult();
             }
-            catch
+            catch (Exception ex)
             {
+                _client.Logger?.LogError(ex, "Error during SnowpipeChannel Dispose cleanup (wait+drop) for {Database}.{Schema}.{Pipe}.{Channel}", Database, Schema, Pipe, Name);
                 // Swallow errors during disposal to avoid throwing from Dispose.
             }
         }
