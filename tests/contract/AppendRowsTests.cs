@@ -30,7 +30,7 @@ public class AppendRowsTests
         await client.ExchangeScopedTokenAsync("example.snowflakecomputing.com");
         var channel = await client.OpenChannelAsync("DB", "SCHEMA", "PIPE", "my_channel");
         var ex = await Record.ExceptionAsync(async () =>
-            await channel.AppendRowsAsync(new[]{"{}"}));
+            await channel.AppendRowsAsync(new[] { "{}" }));
         ex.Should().BeNull();
     }
 }

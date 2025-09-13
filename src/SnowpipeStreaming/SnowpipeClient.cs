@@ -431,6 +431,28 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
 
     private static string Truncate(string s, int max = 512) => s.Length <= max ? s : s.Substring(0, max);
 
+    private static string? TryGetRequestId(HttpResponseMessage resp, string body)
+    {
+        if (resp.Headers.TryGetValues("X-Request-Id", out var ridHeader))
+        {
+            var rid = ridHeader.FirstOrDefault();
+            if (!string.IsNullOrEmpty(rid)) return rid;
+        }
+        try
+        {
+            if (!string.IsNullOrEmpty(body))
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("requestId", out var rid) && rid.ValueKind == JsonValueKind.String)
+                {
+                    return rid.GetString();
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
     private async Task<(HttpResponseMessage resp, string body)> SendWithRetryAsync(Func<HttpRequestMessage> requestFactory, CancellationToken cancellationToken)
     {
         const int maxAttempts = 3;
@@ -442,7 +464,8 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
             _logger?.LogDebug("{Method} {Uri}", req.Method, req.RequestUri);
             var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+            var reqId = TryGetRequestId(resp, body);
+            _logger?.LogDebug("Response {Status} in {Ms}ms (reqId={ReqId})", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds, reqId);
 
             int code = (int)resp.StatusCode;
             if (resp.IsSuccessStatusCode)
@@ -465,7 +488,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
             }
             if (!resp.IsSuccessStatusCode)
             {
-                _logger?.LogWarning("HTTP {Status} after {Attempts} attempt(s) for {Method} {Uri}", code, attempt, req.Method, req.RequestUri);
+                _logger?.LogWarning("HTTP {Status} after {Attempts} attempt(s) for {Method} {Uri} (reqId={ReqId})", code, attempt, req.Method, req.RequestUri, reqId);
             }
             return (resp, body);
         }

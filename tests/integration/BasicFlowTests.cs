@@ -65,7 +65,7 @@ public class BasicFlowTests
             // Simulate docs behavior: client receives a hostname and uses it for ingest endpoints
             await client.ExchangeScopedTokenAsync(hostname);
             var channel = await client.OpenChannelAsync("DB", "SCHEMA", "PIPE", "my_channel");
-            var next = await channel.AppendRowsAsync(new[]{"{}"});
+            var next = await channel.AppendRowsAsync(new[] { "{}" });
             await channel.WaitForCommitAsync(next);
         });
         ex.Should().BeNull(); // will fail until implemented

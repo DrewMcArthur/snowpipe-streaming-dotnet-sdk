@@ -29,7 +29,7 @@ public class BulkChannelStatusTests
         var client = new SnowpipeClient(new Uri("https://example.snowflakecomputing.com"), "jwt", handler);
         await client.ExchangeScopedTokenAsync("example.snowflakecomputing.com");
         var ex = await Record.ExceptionAsync(async () =>
-            await client.BulkGetChannelStatusAsync("DB", "SCHEMA", "PIPE", new[]{"my_channel"}));
+            await client.BulkGetChannelStatusAsync("DB", "SCHEMA", "PIPE", new[] { "my_channel" }));
         ex.Should().BeNull(); // will fail until implemented
     }
 }

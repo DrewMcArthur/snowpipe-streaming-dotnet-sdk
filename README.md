@@ -13,7 +13,7 @@ A lightweight, idiomatic C# library for interacting with Snowflake's Snowpipe St
 - Cancellation-friendly async APIs and optional logging via `ILogger`
 
 ## Quickstart
-See `specs/001-this-is-a/quickstart.md` for an end-to-end sample.
+See `./quickstart.md` for an end-to-end sample.
 
 ## Lifecycle and Channels
 - Use `OpenChannelAsync(..., dropOnDispose: true)` to get an `await using`-friendly `Channel` that automatically waits for the latest continuation token to commit and then drops the channel server-side upon disposal. This is ideal for ephemeral jobs and tests.
@@ -78,7 +78,7 @@ This repository is in active development. Packaging to NuGet is planned (see tas
   - `tests/contract`, `tests/integration`, `tests/unit` — tests
 
 ## How This Was Created
-This repository was bootstrapped using a structured specification workflow:
+This repository was bootstrapped using a structured specification workflow, described [here](https://github.com/github/spec-kit):
 - The feature was specified and planned using a "Specify" repository template with AI-friendly templates (see `specs/` directory).
 - Implementation was assisted by OpenAI’s Codex CLI (open-source agentic coding interface), which generated scaffolding, plans, tasks, and code under human direction, using the Snowflake documentation provided locally.
 
