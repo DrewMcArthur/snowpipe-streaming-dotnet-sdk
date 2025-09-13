@@ -1,0 +1,35 @@
+# Build results
+bin/
+obj/
+
+# VS/IDE
+.vs/
+.vscode/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResult*/
+*.trx
+
+# Logs
+*.log
+
+# Packages
+*.nupkg
+*.snupkg
+packages/
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
