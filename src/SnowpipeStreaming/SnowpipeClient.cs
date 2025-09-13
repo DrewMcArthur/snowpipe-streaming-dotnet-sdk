@@ -65,14 +65,13 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     public async Task<string> GetHostnameAsync(CancellationToken cancellationToken = default)
     {
         var uri = Combine(_accountUrl, "/v2/streaming/hostname");
-        using var req = new HttpRequestMessage(HttpMethod.Get, uri);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
-        req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
-        var started = DateTimeOffset.UtcNow;
-        _logger?.LogDebug("GET {Uri}", uri);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+        var (resp, body) = await SendWithRetryAsync(() =>
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, uri);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
+            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            return req;
+        }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
         using var doc = JsonDocument.Parse(body);
         var hostname = doc.RootElement.GetProperty("hostname").GetString() ?? throw new InvalidOperationException("hostname missing");
@@ -94,15 +93,14 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         _ingestBaseUri = new Uri($"{_accountUrl.Scheme}://{hostname}");
 
         var uri = Combine(_accountUrl, "/oauth/token");
-        var content = new StringContent("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&scope=" + Uri.EscapeDataString(hostname), Encoding.UTF8, "application/x-www-form-urlencoded");
-        using var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
-        req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
-        var started = DateTimeOffset.UtcNow;
-        _logger?.LogDebug("POST {Uri} (form)", uri);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+        var (resp, body) = await SendWithRetryAsync(() =>
+        {
+            var content = new StringContent("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&scope=" + Uri.EscapeDataString(hostname), Encoding.UTF8, "application/x-www-form-urlencoded");
+            var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
+            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            return req;
+        }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
         using var doc = JsonDocument.Parse(body);
         _scopedToken = doc.RootElement.GetProperty("token").GetString() ?? throw new InvalidOperationException("token missing");
@@ -137,19 +135,18 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         var path = $"/v2/streaming/databases/{Uri.EscapeDataString(database)}/schemas/{Uri.EscapeDataString(schema)}/pipes/{Uri.EscapeDataString(pipe)}/channels/{Uri.EscapeDataString(channelName)}";
         var uri = Combine(_ingestBaseUri!, path, requestId is null ? null : ($"requestId={Uri.EscapeDataString(requestId.Value.ToString())}"));
 
-        HttpContent? content = null;
-        if (!string.IsNullOrEmpty(offsetToken))
+        var (resp, body) = await SendWithRetryAsync(() =>
         {
-            var payload = JsonSerializer.Serialize(new OpenChannelRequest { OffsetToken = offsetToken }, _json);
-            content = new StringContent(payload, Encoding.UTF8, "application/json");
-        }
-        using var req = new HttpRequestMessage(HttpMethod.Put, uri) { Content = content };
-        AddAuth(req);
-        var started = DateTimeOffset.UtcNow;
-        _logger?.LogDebug("PUT {Uri}", uri);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+            HttpContent? content = null;
+            if (!string.IsNullOrEmpty(offsetToken))
+            {
+                var payload = JsonSerializer.Serialize(new OpenChannelRequest { OffsetToken = offsetToken }, _json);
+                content = new StringContent(payload, Encoding.UTF8, "application/json");
+            }
+            var req = new HttpRequestMessage(HttpMethod.Put, uri) { Content = content };
+            AddAuth(req);
+            return req;
+        }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
         var result = JsonSerializer.Deserialize<OpenChannelResponse>(body, _json) ?? throw new InvalidOperationException("Invalid response");
         return new SnowpipeChannel(this, database, schema, pipe, channelName, result.NextContinuationToken, dropOnDispose: dropOnDispose);
@@ -270,16 +267,15 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         if (requestId is not null) queries.Add($"requestId={Uri.EscapeDataString(requestId.Value.ToString())}");
         var uri = Combine(_ingestBaseUri!, basePath, string.Join("&", queries));
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, uri)
+        var (resp, body) = await SendWithRetryAsync(() =>
         {
-            Content = new StringContent(ndjson.EndsWith("\n") ? ndjson : ndjson + "\n", Encoding.UTF8, "application/x-ndjson")
-        };
-        AddAuth(req);
-        var started = DateTimeOffset.UtcNow;
-        _logger?.LogDebug("POST {Uri} (ndjson {Length} bytes)", uri, ndjson.Length);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+            var req = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = new StringContent(ndjson.EndsWith("\n") ? ndjson : ndjson + "\n", Encoding.UTF8, "application/x-ndjson")
+            };
+            AddAuth(req);
+            return req;
+        }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
         using var doc = JsonDocument.Parse(body);
         if (doc.RootElement.TryGetProperty("next_continuation_token", out var nct))
@@ -305,16 +301,15 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         var path = $"/v2/streaming/databases/{Uri.EscapeDataString(database)}/schemas/{Uri.EscapeDataString(schema)}/pipes/{Uri.EscapeDataString(pipe)}:bulk-channel-status";
         var uri = Combine(_ingestBaseUri!, path);
         var payload = JsonSerializer.Serialize(new { channel_names = channelNames }, _json);
-        using var req = new HttpRequestMessage(HttpMethod.Post, uri)
+        var (resp, body) = await SendWithRetryAsync(() =>
         {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
-        };
-        AddAuth(req);
-        var started = DateTimeOffset.UtcNow;
-        _logger?.LogDebug("POST {Uri} (bulk status)", uri);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+            var req = new HttpRequestMessage(HttpMethod.Post, uri)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            };
+            AddAuth(req);
+            return req;
+        }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
         var map = new Dictionary<string, ChannelStatus>(StringComparer.OrdinalIgnoreCase);
         using var doc = JsonDocument.Parse(body);
@@ -352,13 +347,12 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         EnsureIngestReady();
         var path = $"/v2/streaming/databases/{Uri.EscapeDataString(database)}/schemas/{Uri.EscapeDataString(schema)}/pipes/{Uri.EscapeDataString(pipe)}/channels/{Uri.EscapeDataString(channelName)}";
         var uri = Combine(_ingestBaseUri!, path, requestId is null ? null : ($"requestId={Uri.EscapeDataString(requestId.Value.ToString())}"));
-        using var req = new HttpRequestMessage(HttpMethod.Delete, uri);
-        AddAuth(req);
-        var started = DateTimeOffset.UtcNow;
-        _logger?.LogDebug("DELETE {Uri}", uri);
-        using var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+        var (resp, body) = await SendWithRetryAsync(() =>
+        {
+            var req = new HttpRequestMessage(HttpMethod.Delete, uri);
+            AddAuth(req);
+            return req;
+        }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
     }
 
@@ -432,6 +426,43 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     }
 
     private static string Truncate(string s, int max = 512) => s.Length <= max ? s : s.Substring(0, max);
+
+    private async Task<(HttpResponseMessage resp, string body)> SendWithRetryAsync(Func<HttpRequestMessage> requestFactory, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 3;
+        TimeSpan baseDelay = TimeSpan.FromMilliseconds(200);
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var req = requestFactory();
+            var started = DateTimeOffset.UtcNow;
+            _logger?.LogDebug("{Method} {Uri}", req.Method, req.RequestUri);
+            var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger?.LogDebug("Response {Status} in {Ms}ms", (int)resp.StatusCode, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+
+            int code = (int)resp.StatusCode;
+            if (resp.IsSuccessStatusCode)
+            {
+                return (resp, body);
+            }
+
+            // Retry on 429 or 5xx
+            if ((code == 429 || code >= 500) && attempt < maxAttempts)
+            {
+                TimeSpan delay = resp.Headers.RetryAfter?.Delta ?? TimeSpan.Zero;
+                if (delay == TimeSpan.Zero)
+                {
+                    var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100));
+                    delay = TimeSpan.FromMilliseconds(baseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1)) + jitter;
+                }
+                _logger?.LogDebug("Retrying attempt {Attempt} after {Delay} due to status {Status}", attempt + 1, delay, code);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            return (resp, body);
+        }
+        throw new InvalidOperationException("Unreachable retry loop exit.");
+    }
 
     private static void EnsureSuccessOrThrow(HttpResponseMessage resp, string body)
     {

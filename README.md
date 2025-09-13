@@ -20,6 +20,14 @@ See `specs/001-this-is-a/quickstart.md` for an end-to-end sample.
 - For long-lived channels, omit `dropOnDispose` and manage lifecycle explicitly via `channel.WaitForCommitAsync()` and `channel.DropAsync()`.
 - Disposal never throws: cleanup errors are swallowed to keep `using`/`await using` ergonomic. If you need to handle errors, call the methods explicitly before disposal.
 
+## Thread Safety & Concurrency
+- Appends on the same channel must be sequential due to continuation tokens. The library serializes `AppendRowsAsync` per channel with an internal semaphore to prevent concurrent appends.
+- Multiple channels can append in parallel.
+
+## Retry & Backoff
+- Transient errors (HTTP 429 and 5xx) automatically retry up to 3 attempts with exponential backoff + jitter. The retry respects `Retry-After` when present.
+- Errors still surface as typed exceptions with enriched context (`error_code`, `requestId`, `x-request-id`).
+
 Example:
 ```csharp
 await using var channel = await client.OpenChannelAsync(
