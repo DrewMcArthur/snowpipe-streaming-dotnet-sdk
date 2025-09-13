@@ -1,0 +1,170 @@
+Tutorial: Get started with Snowpipe Streaming high performance architecture SDK
+
+PREVIEW FEATURE
+— OPEN
+
+Support for this feature is available to all accounts on AWS only.
+This tutorial provides step-by-step instructions for setting up and running a demo application that utilizes the new high-performance architecture with the snowpipe-streaming SDK.
+
+Prerequisites
+
+Before you run the demo, ensure that you meet the following prerequisites:
+
+Snowflake account: Verify that you have access to a Snowflake account with sufficient privileges to create databases, schemas, tables, and manage security settings.
+
+Network access: Ensure that your network allows outbound connectivity to Snowflake and AWS S3. Adjust firewall rules if necessary, because the SDK makes REST API calls to Snowflake and to AWS S3.
+
+Snowpipe Streaming SDK: Download the SDK and sample code for your preferred language:
+
+Java
+Python
+Java Development Environment: Install Java 11 or later, and Maven for dependency management.
+
+Include the latest version of the JAR in your project as Step 3: Set up the demo project demonstrates.
+
+Download the sample Java code .
+
+Get started
+
+This section outlines the steps required to set up and run the demo application.
+
+Step 1: Configure Snowflake objects
+
+Before using the snowpipe-streaming SDK, you must create a target table and a dedicated PIPE object within your Snowflake environment. Unlike the classic architecture, the high-performance architecture requires a PIPE object for data ingestion.
+
+Generate a key pair for authentication
+
+Generate a private-public key pair for authentication using OpenSSL. For more information, see Key-pair authentication and key-pair rotation.
+
+Run the following commands in your terminal to generate the keys:
+
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+PUBK=$(cat ./rsa_key.pub | grep -v KEY- | tr -d '\012')
+echo "ALTER USER MY_USER SET RSA_PUBLIC_KEY='$PUBK';"
+Important
+Save the generated rsa_key.p8 (private key) and rsa_key.pub (public key) files securely. They will be used in subsequent authentication steps.
+Create database, schema, table, pipe, and configure user authentication
+
+Run the following SQL commands in your Snowflake account (for example, using Snowsight or SnowSQL) to create the necessary objects and configure authentication for your user. Replace placeholders like MY_USER, MY_DATABASE, etc., with your desired names.
+
+-- Create Database and Schema
+
+CREATE OR REPLACE DATABASE MY_DATABASE;
+CREATE OR REPLACE SCHEMA MY_SCHEMA;
+
+-- Create Target Table
+
+CREATE OR REPLACE TABLE MY_TABLE (
+    data VARIANT,
+    c1 NUMBER,
+    c2 STRING
+);
+
+-- Create PIPE Object for Streaming Ingestion
+
+CREATE OR REPLACE PIPE MY_PIPE
+AS COPY INTO MY_TABLE FROM (SELECT $1, $1:c1, $1:ts FROM TABLE(DATA_SOURCE(TYPE => 'STREAMING')));
+
+-- Configure Authentication Policy (optional, but recommended for explicit control)
+
+CREATE OR REPLACE AUTHENTICATION POLICY testing_auth_policy
+  AUTHENTICATION_METHODS = ('SAML', 'PASSWORD', 'OAUTH', 'KEYPAIR')
+  CLIENT_TYPES = ('SNOWFLAKE_UI', 'SNOWSQL', 'DRIVERS');
+
+-- Create or Modify User for SDK Authentication
+
+CREATE OR REPLACE USER MY_USER; -- Or ALTER USER MY_USER if it already exists
+
+-- Grant necessary roles to the user
+
+GRANT ROLE ACCOUNTADMIN TO USER MY_USER; -- Grant a role with sufficient privileges
+
+-- Apply authentication policy (if created)
+
+ALTER USER MY_USER SET AUTHENTICATION POLICY testing_auth_policy;
+
+-- Set default role (optional)
+
+ALTER USER MY_USER SET DEFAULT_ROLE=ACCOUNTADMIN;
+
+-- Set the public key for key-pair authentication
+
+ALTER USER MY_USER SET RSA_PUBLIC_KEY='YOUR_FORMATTED_PUBLIC_KEY';
+Note
+Replace YOUR_FORMATTED_PUBLIC_KEY with the output of the PUBK variable from the key generation step.
+Step 2: Configure an authentication profile
+
+The demo application requires a profile.json file to store connection settings, including authentication details. The SDK uses key-pair authentication for secure connections.
+
+Create a profile configuration file
+
+Create or update the profile.json file in the root directory of the provided Java demo project.
+
+To format your private key (rsa_key.p8) for inclusion in the profile.json file, execute the following command in your terminal:
+
+sed 's/$/\\n/' rsa_key.p8 | tr -d '\n'
+This command will output your private key with newline characters escaped, making it suitable for a JSON string.
+
+profile.json template
+
+{
+    "user": "MY_USER",
+    "account": "your_account_identifier",
+    "url": "https://your_account_identifier.snowflakecomputing.com:443",
+    "private_key": "YOUR_FORMATTED_PRIVATE_KEY"
+}
+Replace the placeholders:
+
+MY_USER: Your Snowflake username configured in the previous step.
+
+your_account_identifier: Your Snowflake account identifier (for example, xy12345).
+
+YOUR_FORMATTED_PRIVATE_KEY: The output from the sed command executed above. Example format: -----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----.
+
+Step 3: Set up the demo project
+
+Java
+Python
+Add the JAR dependency
+
+To include the Snowpipe Streaming SDK, add the following dependency to your Maven pom.xml. Maven automatically downloads the JAR from the public repository.
+
+<dependency>
+    <groupId>com.snowflake</groupId>
+    <artifactId>snowpipe-streaming</artifactId>
+    <version>YOUR_SDK_VERSION</version>
+</dependency>
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+    <version>2.18.1</version>
+</dependency>
+Important
+Replace YOUR_SDK_VERSION with the specific version available on Maven Central.
+Download the sample Java code .
+
+Place the profile file
+
+Ensure that the profile.json file that you configured in Step 2 is located in the root directory of your project.
+
+Step 4: Use the provided code example and run the demo application
+
+In your terminal, navigate to the project’s root directory.
+
+Java
+Python
+Build and execute
+
+Build the project:
+
+mvn clean install
+Run the main class:
+
+mvn exec:java -Dexec.mainClass="com.snowflake.snowpipestreaming.demo.Main"
+Step 5: Verify the data
+
+After running the demo, verify the ingested data in Snowflake:
+
+SELECT COUNT(*) FROM MY_DATABASE.MY_SCHEMA.MY_TABLE;
+SELECT * FROM MY_DATABASE.MY_SCHEMA.MY_TABLE LIMIT 10;
