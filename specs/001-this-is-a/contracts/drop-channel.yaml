@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: Snowpipe Streaming - Drop Channel
+  version: 0.1.0
+paths:
+  /v2/streaming/databases/{databaseName}/schemas/{schemaName}/pipes/{pipeName}/channels/{channelName}:
+    delete:
+      summary: Drop a channel and its metadata
+      parameters:
+        - in: path
+          name: databaseName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: schemaName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: pipeName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: channelName
+          required: true
+          schema: { type: string }
+        - in: query
+          name: requestId
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: No Content

@@ -1,0 +1,54 @@
+# OpenAPI fragment placeholder - to be completed verbatim from Snowflake docs
+openapi: 3.0.3
+info:
+  title: Snowpipe Streaming - Append Rows
+  version: 0.1.0
+paths:
+  /v2/streaming/data/databases/{databaseName}/schemas/{schemaName}/pipes/{pipeName}/channels/{channelName}/rows:
+    post:
+      summary: Append rows to the given channel
+      parameters:
+        - in: path
+          name: databaseName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: schemaName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: pipeName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: channelName
+          required: true
+          schema: { type: string }
+        - in: query
+          name: continuationToken
+          required: true
+          schema: { type: string }
+        - in: query
+          name: offsetToken
+          required: false
+          schema: { type: string }
+        - in: query
+          name: requestId
+          required: false
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+              description: NDJSON payload; each line is a JSON text per RFC 8259, terminated by \n (optionally with \r before \n)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  next_continuation_token: { type: string }

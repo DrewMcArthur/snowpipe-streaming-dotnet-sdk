@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: Snowpipe Streaming - Get Hostname
+  version: 0.1.0
+paths:
+  /v2/streaming/hostname:
+    get:
+      summary: Get the hostname used for Snowpipe Streaming REST API
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hostname: { type: string }
+                required: [hostname]

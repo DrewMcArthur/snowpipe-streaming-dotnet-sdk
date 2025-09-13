@@ -1,0 +1,58 @@
+openapi: 3.0.3
+info:
+  title: Snowpipe Streaming - Bulk Get Channel Status
+  version: 0.1.0
+paths:
+  /v2/streaming/databases/{databaseName}/schemas/{schemaName}/pipes/{pipeName}:bulk-channel-status:
+    post:
+      summary: Bulk get channel status for given names
+      parameters:
+        - in: path
+          name: databaseName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: schemaName
+          required: true
+          schema: { type: string }
+        - in: path
+          name: pipeName
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_names:
+                  type: array
+                  items: { type: string }
+              required: [channel_names]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channel_statuses:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        channel_status_code: { type: string }
+                        last_committed_offset_token: { type: string }
+                        database_name: { type: string }
+                        schema_name: { type: string }
+                        pipe_name: { type: string }
+                        channel_name: { type: string }
+                        rows_inserted: { type: integer }
+                        rows_parsed: { type: integer }
+                        rows_errors: { type: integer }
+                        last_error_offset_upper_bound: { type: string }
+                        last_error_message: { type: string }
+                        last_error_timestamp: { type: string, description: "timestamp_utc" }
+                        snowflake_avg_processing_latency_ms: { type: integer }
