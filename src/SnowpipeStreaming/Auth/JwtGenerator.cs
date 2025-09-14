@@ -24,7 +24,9 @@ public static class JwtGenerator
         if (string.IsNullOrWhiteSpace(user)) throw new ArgumentException("UserName required", nameof(options.UserName));
 
         using var rsa = LoadRsaFromOptions(options);
-        string fp = options.PublicKeyFingerprint ?? PublicKeyFingerprint.ComputeSha256Fingerprint(rsa).Substring("SHA256:".Length);
+        string fp = options.PublicKeyFingerprint ?? PublicKeyFingerprint
+            .ComputeSha256Fingerprint(rsa)
+            .Substring(PublicKeyFingerprint.Sha256Prefix.Length);
 
         var issued = (now ?? DateTimeOffset.UtcNow);
         var lifetime = options.TokenLifetime <= TimeSpan.Zero ? TimeSpan.FromMinutes(55) : options.TokenLifetime;
@@ -83,4 +85,3 @@ public static class JwtGenerator
         return b64.Replace('+', '-').Replace('/', '_').TrimEnd('=');
     }
 }
-

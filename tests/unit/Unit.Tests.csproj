@@ -19,4 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/SnowpipeStreaming/SnowpipeStreaming.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\shared\TestPem.cs" Link="TestUtilities\TestPem.cs" />
+  </ItemGroup>
 </Project>

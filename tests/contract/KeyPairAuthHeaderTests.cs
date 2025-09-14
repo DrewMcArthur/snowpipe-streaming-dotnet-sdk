@@ -26,7 +26,7 @@ public class KeyPairAuthHeaderTests
         // Generate an ephemeral key for the test and feed it via PEM
         using var rsa = System.Security.Cryptography.RSA.Create(2048);
         var pkcs8 = rsa.ExportPkcs8PrivateKey();
-        var pem = Pem("PRIVATE KEY", pkcs8);
+        var pem = TestPem.Pem("PRIVATE KEY", pkcs8);
 
         var opts = new KeyPairAuthOptions
         {
@@ -42,17 +42,5 @@ public class KeyPairAuthHeaderTests
         hostname.Should().Be("localhost");
     }
 
-    private static string Pem(string type, byte[] data)
-    {
-        var b64 = Convert.ToBase64String(data);
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"-----BEGIN {type}-----");
-        for (int i = 0; i < b64.Length; i += 64)
-        {
-            sb.AppendLine(b64.Substring(i, Math.Min(64, b64.Length - i)));
-        }
-        sb.AppendLine($"-----END {type}-----");
-        return sb.ToString();
-    }
+    
 }
-

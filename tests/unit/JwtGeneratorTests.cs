@@ -12,7 +12,7 @@ public class JwtGeneratorTests
     public void Generates_Claims_And_Signature_RS256()
     {
         using var rsa = RSA.Create(2048);
-        var pem = ToPem("PRIVATE KEY", rsa.ExportPkcs8PrivateKey());
+        var pem = TestPem.ToPem("PRIVATE KEY", rsa.ExportPkcs8PrivateKey());
         var opts = new KeyPairAuthOptions
         {
             AccountIdentifier = "myorg-myacct",
@@ -45,7 +45,7 @@ public class JwtGeneratorTests
     public void Normalizes_Account_And_User()
     {
         using var rsa = RSA.Create(2048);
-        var pem = ToPem("PRIVATE KEY", rsa.ExportPkcs8PrivateKey());
+        var pem = TestPem.ToPem("PRIVATE KEY", rsa.ExportPkcs8PrivateKey());
         var opts = new KeyPairAuthOptions
         {
             AccountIdentifier = "xy12345.us-east-1",
@@ -59,18 +59,7 @@ public class JwtGeneratorTests
         doc.RootElement.GetProperty("iss").GetString().Should().StartWith("XY12345.USER1.SHA256:");
     }
 
-    private static string ToPem(string type, byte[] data)
-    {
-        var b64 = Convert.ToBase64String(data);
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"-----BEGIN {type}-----");
-        for (int i = 0; i < b64.Length; i += 64)
-        {
-            sb.AppendLine(b64.Substring(i, Math.Min(64, b64.Length - i)));
-        }
-        sb.AppendLine($"-----END {type}-----");
-        return sb.ToString();
-    }
+    
 
     private static byte[] FromBase64Url(string s)
     {
@@ -83,4 +72,3 @@ public class JwtGeneratorTests
         return Convert.FromBase64String(padded);
     }
 }
-

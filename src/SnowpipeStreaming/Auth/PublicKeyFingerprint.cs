@@ -8,6 +8,9 @@ namespace SnowpipeStreaming.Auth;
 /// </summary>
 public static class PublicKeyFingerprint
 {
+    /// <summary>Prefix used by Snowflake for SHA-256 public key fingerprints.</summary>
+    public const string Sha256Prefix = "SHA256:";
+
     /// <summary>
     /// Computes the fingerprint string in the form "SHA256:&lt;base64&gt;" from an RSA public key.
     /// Uses the SHA-256 hash over the DER-encoded SubjectPublicKeyInfo.
@@ -18,7 +21,6 @@ public static class PublicKeyFingerprint
         var pub = rsa.ExportSubjectPublicKeyInfo();
         var hash = SHA256.HashData(pub);
         var b64 = Convert.ToBase64String(hash);
-        return $"SHA256:{b64}";
+        return $"{Sha256Prefix}{b64}";
     }
 }
-
