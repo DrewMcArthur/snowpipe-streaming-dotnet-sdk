@@ -62,6 +62,10 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     /// Creates a Snowpipe Streaming client bound to an account URL and a custom account-host token provider
     /// (e.g., key-pair JWT provider). Ingest calls still use the scoped token after exchange.
     /// </summary>
+    /// <param name="accountUrl">Base account URL (e.g., https://{account}.{region}.snowflakecomputing.com or http://localhost:port for tests).</param>
+    /// <param name="accountTokenProvider">Provider that generates account-host bearer tokens (and token type header) for authentication.</param>
+    /// <param name="handler">Optional HTTP message handler for testing.</param>
+    /// <param name="logger">Optional logger for trace/debug output.</param>
     public SnowpipeClient(Uri accountUrl, SnowpipeStreaming.Auth.IAccountTokenProvider accountTokenProvider, HttpMessageHandler? handler = null, ILogger? logger = null)
     {
         _accountUrl = accountUrl ?? throw new ArgumentNullException(nameof(accountUrl));

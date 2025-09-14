@@ -5,6 +5,17 @@ This library provides a C# client for Snowflake Snowpipe Streaming REST endpoint
 ## Basic Usage
 
 ```csharp
+// Option A) Key Pair Authentication (in-app JWT from env)
+// Set env vars: SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, and SNOWFLAKE_PRIVATE_KEY or _PATH (and optional _PASSPHRASE)
+var client = new SnowpipeClient(
+    accountUrl: new Uri("https://<account>.<region>.snowflakecomputing.com"),
+    accountTokenProvider: new SnowpipeStreaming.Auth.EnvironmentKeyPairTokenProvider());
+
+// Discover hostname and exchange scoped token
+var hostname = await client.GetHostnameAsync(cancellationToken);
+await client.ExchangeScopedTokenAsync(hostname, cancellationToken);
+
+// Option B) Bring your own JWT (manual)
 // 1) Construct client with account URL and JWT (provided by caller)
 var client = new SnowpipeClient(
     accountUrl: new Uri("https://<account>.<region>.snowflakecomputing.com"),
@@ -14,7 +25,7 @@ var client = new SnowpipeClient(
 var hostname = await client.GetHostnameAsync(cancellationToken);
 await client.ExchangeScopedTokenAsync(hostname, cancellationToken);
 
-// 3) Open a channel for a target pipe (returns a Channel)
+// Open a channel for a target pipe (returns a Channel)
 await using var channel = await client.OpenChannelAsync(
     database: "DB",
     schema: "SCHEMA",
@@ -24,11 +35,11 @@ await using var channel = await client.OpenChannelAsync(
     cancellationToken);
 // channel.LatestContinuationToken is set after open
 
-// 4) Append rows (generic serialization; auto-splits >16MB into multiple requests)
+// Append rows (generic serialization; auto-splits >16MB into multiple requests)
 var rows = new[]{ new { id = 1, value = "a" }, new { id = 2, value = "b" } };
 var continuation = await channel.AppendRowsAsync(rows, cancellationToken: cancellationToken);
 
-// 5) Close the channel and wait until status catches up
+// Close the channel and wait until status catches up
 await channel.WaitForCommitAsync(continuation, cancellationToken);
 ```
 

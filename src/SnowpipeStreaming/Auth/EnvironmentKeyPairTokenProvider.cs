@@ -15,6 +15,9 @@ public sealed class EnvironmentKeyPairTokenProvider : IAccountTokenProvider
     /// <inheritdoc />
     public string TokenType => _inner.TokenType;
 
+    /// <summary>
+    /// Initializes the provider by reading environment variables for Snowflake account, user, and private key material.
+    /// </summary>
     public EnvironmentKeyPairTokenProvider()
     {
         var account = Environment.GetEnvironmentVariable("SNOWFLAKE_ACCOUNT") ?? string.Empty;
@@ -37,4 +40,3 @@ public sealed class EnvironmentKeyPairTokenProvider : IAccountTokenProvider
     public Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
         => _inner.GetTokenAsync(cancellationToken);
 }
-

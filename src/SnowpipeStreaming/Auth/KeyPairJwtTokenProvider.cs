@@ -20,6 +20,10 @@ public sealed class KeyPairJwtTokenProvider : IAccountTokenProvider
     /// <inheritdoc />
     public string TokenType => "KEYPAIR_JWT";
 
+    /// <summary>
+    /// Creates a provider that generates and caches KEYPAIR_JWT tokens using the provided options.
+    /// </summary>
+    /// <param name="options">Key pair authentication options (account, user, private key, optional passphrase, lifetime).</param>
     public KeyPairJwtTokenProvider(KeyPairAuthOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -59,4 +63,3 @@ public sealed class KeyPairJwtTokenProvider : IAccountTokenProvider
         return Convert.FromBase64String(padded);
     }
 }
-

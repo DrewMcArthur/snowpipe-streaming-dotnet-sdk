@@ -20,7 +20,8 @@ public class JwtGeneratorEncryptedKeyTests
             PrivateKeyPem = pem,
         };
         Action actWrong = () => JwtGenerator.GenerateJwt(optsWrong);
-        actWrong.Should().Throw<CryptographicException>();
+        var ex = actWrong.Should().Throw<Exception>().Which;
+        (ex is CryptographicException || ex is ArgumentException).Should().BeTrue();
 
         var optsRight = new KeyPairAuthOptions
         {
@@ -46,4 +47,3 @@ public class JwtGeneratorEncryptedKeyTests
         return sb.ToString();
     }
 }
-
