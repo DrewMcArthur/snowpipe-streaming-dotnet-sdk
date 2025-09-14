@@ -52,5 +52,5 @@ public sealed class KeyPairJwtTokenProvider : IAccountTokenProvider
         }
     }
 
-    
+
 }
