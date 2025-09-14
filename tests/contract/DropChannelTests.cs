@@ -33,5 +33,9 @@ public class DropChannelTests
         var channel = await client.OpenChannelAsync("DB", "SCHEMA", "PIPE", "my_channel");
         var ex = await Record.ExceptionAsync(async () => await channel.DropAsync());
         ex.Should().BeNull(); // will fail until implemented
+
+        // After drop, using the channel should fail
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await channel.GetLatestCommittedOffsetTokenAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await channel.AppendRowsAsync(new[] { "{}" }));
     }
 }

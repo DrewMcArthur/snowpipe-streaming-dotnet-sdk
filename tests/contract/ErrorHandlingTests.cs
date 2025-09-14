@@ -56,16 +56,22 @@ public class ErrorHandlingTests
         var handler = new MockSnowflakeServerHandler();
         handler.Map("POST", "/oauth/token", _ => MockSnowflakeServerHandler.Json(HttpStatusCode.OK, new { token = "correct-token" }));
         // Any ingest route will do; it won't be reached due to auth enforcement
+        handler.Map("PUT", "/v2/streaming/databases/DB/schemas/SCHEMA/pipes/PIPE/channels/ch", _ =>
+        {
+            return MockSnowflakeServerHandler.Json(HttpStatusCode.OK, new { next_continuation_token = "cont" });
+        });
         handler.Map("DELETE", "/v2/streaming/databases/DB/schemas/SCHEMA/pipes/PIPE/channels/ch", _ => new HttpResponseMessage(HttpStatusCode.NoContent));
 
         var client = new SnowpipeClient(new Uri("http://localhost"), "jwt", handler);
         await client.ExchangeScopedTokenAsync("localhost");
 
-        // Corrupt the token using reflection to simulate mismatch
+        // Open a channel successfully using the valid scoped token
+        var channel = await client.OpenChannelAsync("DB", "SCHEMA", "PIPE", "ch");
+
+        // Corrupt the token using reflection to simulate mismatch for subsequent calls
         var tokField = typeof(SnowpipeClient).GetField("_scopedToken", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         tokField!.SetValue(client, "wrong-token");
-
         await Assert.ThrowsAsync<SnowpipeUnauthorizedException>(async () =>
-            await client.DropChannelAsync("DB", "SCHEMA", "PIPE", "ch"));
+            await channel.DropAsync());
     }
 }
