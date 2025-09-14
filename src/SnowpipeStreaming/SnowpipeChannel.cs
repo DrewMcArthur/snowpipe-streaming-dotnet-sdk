@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+
 namespace SnowpipeStreaming;
 
 /// <summary>
@@ -123,11 +124,12 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     public async Task DropAsync(CancellationToken cancellationToken = default)
     {
         var prev = Interlocked.CompareExchange(ref _state, (int)SnowpipeChannelState.Dropping, (int)SnowpipeChannelState.Open);
-        if ((SnowpipeChannelState)prev == SnowpipeChannelState.Dropped)
+        var prevState = (SnowpipeChannelState)prev;
+        if (prevState == SnowpipeChannelState.Dropped)
         {
             return; // idempotent
         }
-        if ((SnowpipeChannelState)prev == SnowpipeChannelState.Dropping)
+        if (prevState == SnowpipeChannelState.Dropping)
         {
             return; // another caller already initiated drop
         }

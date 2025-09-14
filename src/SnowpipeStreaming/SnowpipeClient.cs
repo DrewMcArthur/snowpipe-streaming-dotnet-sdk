@@ -25,6 +25,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
 
     private string? _scopedToken;
     private Uri? _ingestBaseUri;
+    private SnowpipeStreaming.Auth.IAccountTokenProvider? _accountTokenProvider;
 
     // Expose logger to internal collaborators (e.g., SnowpipeChannel) without leaking publicly.
     internal ILogger? Logger => _logger;
@@ -58,6 +59,35 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
+    /// Creates a Snowpipe Streaming client bound to an account URL and a custom account-host token provider
+    /// (e.g., key-pair JWT provider). Ingest calls still use the scoped token after exchange.
+    /// </summary>
+    /// <param name="accountUrl">Base account URL (e.g., https://{account}.{region}.snowflakecomputing.com or http://localhost:port for tests).</param>
+    /// <param name="accountTokenProvider">Provider that generates account-host bearer tokens (and token type header) for authentication.</param>
+    /// <param name="handler">Optional HTTP message handler for testing.</param>
+    /// <param name="logger">Optional logger for trace/debug output.</param>
+    public SnowpipeClient(Uri accountUrl, SnowpipeStreaming.Auth.IAccountTokenProvider accountTokenProvider, HttpMessageHandler? handler = null, ILogger? logger = null)
+    {
+        _accountUrl = accountUrl ?? throw new ArgumentNullException(nameof(accountUrl));
+        _jwt = string.Empty;
+        _accountTokenProvider = accountTokenProvider ?? throw new ArgumentNullException(nameof(accountTokenProvider));
+        if (handler is null)
+        {
+            _http = new HttpClient();
+            _ownsHttp = true;
+        }
+        else
+        {
+            _http = new HttpClient(handler, disposeHandler: false);
+            _ownsHttp = false;
+        }
+        _http.Timeout = TimeSpan.FromSeconds(100);
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("SnowpipeStreaming.NET/0.1.0");
+        _json = Serialization.JsonOptions.Default;
+        _logger = logger;
+    }
+
+    /// <summary>
     /// Retrieves the ingest hostname for the current account.
     /// </summary>
     /// <remarks>
@@ -68,11 +98,14 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     public async Task<string> GetHostnameAsync(CancellationToken cancellationToken = default)
     {
         var uri = Combine(_accountUrl, "/v2/streaming/hostname");
+        // Resolve account-host auth up-front to avoid sync-over-async in request factory
+        var (accountToken, accountTokenType) = await GetAccountAuthAsync(cancellationToken).ConfigureAwait(false);
         var (resp, body) = await SendWithRetryAsync(() =>
         {
             var req = new HttpRequestMessage(HttpMethod.Get, uri);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
-            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accountToken);
+            if (!string.IsNullOrWhiteSpace(accountTokenType))
+                req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", accountTokenType);
             return req;
         }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
@@ -96,12 +129,15 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         _ingestBaseUri = new Uri($"{_accountUrl.Scheme}://{hostname}");
 
         var uri = Combine(_accountUrl, "/oauth/token");
+        // Resolve account-host auth up-front to avoid sync-over-async in request factory
+        var (accountToken, accountTokenType) = await GetAccountAuthAsync(cancellationToken).ConfigureAwait(false);
         var (resp, body) = await SendWithRetryAsync(() =>
         {
             var content = new StringContent("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&scope=" + Uri.EscapeDataString(hostname), Encoding.UTF8, "application/x-www-form-urlencoded");
             var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
-            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accountToken);
+            if (!string.IsNullOrWhiteSpace(accountTokenType))
+                req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", accountTokenType);
             return req;
         }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
@@ -420,6 +456,18 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     {
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _scopedToken);
         req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "OAuth");
+    }
+
+    private async Task<(string token, string? tokenType)> GetAccountAuthAsync(CancellationToken cancellationToken)
+    {
+        if (_accountTokenProvider is null)
+        {
+            // Default to caller-provided JWT
+            return (_jwt, "JWT");
+        }
+        var token = await _accountTokenProvider.GetTokenAsync(cancellationToken).ConfigureAwait(false);
+        var tokenType = _accountTokenProvider.TokenType;
+        return (token, tokenType);
     }
 
     private static Uri Combine(Uri baseUri, string path, string? query = null)

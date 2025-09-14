@@ -13,7 +13,33 @@ A lightweight, idiomatic C# library for interacting with Snowflake's Snowpipe St
 - Cancellation-friendly async APIs and optional logging via `ILogger`
 
 ## Quickstart
-See `./quickstart.md` for an end-to-end sample.
+See `./quickstart.md` for an end-to-end sample. For cloud workloads, you can use key pair auth with in-app JWT generation via environment variables.
+
+Key Pair Authentication (in-app JWT)
+- Set the following environment variables with your secrets:
+  - `SNOWFLAKE_ACCOUNT` — account identifier (uppercase; omit region if using account locator)
+  - `SNOWFLAKE_USER` — user name (uppercase)
+  - Either `SNOWFLAKE_PRIVATE_KEY` (PKCS#8 PEM contents) or `SNOWFLAKE_PRIVATE_KEY_PATH` (path to PKCS#8 PEM)
+  - Optional: `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` for encrypted keys
+
+Usage example:
+```csharp
+using SnowpipeStreaming;
+using SnowpipeStreaming.Auth;
+
+var accountUrl = new Uri("https://<account>.<region>.snowflakecomputing.com");
+var provider = new EnvironmentKeyPairTokenProvider();
+var client = new SnowpipeClient(accountUrl, provider);
+
+// Discover ingest hostname and exchange for a scoped token
+var hostname = await client.GetHostnameAsync();
+await client.ExchangeScopedTokenAsync(hostname);
+
+// Ready for ingest operations
+await using var ch = await client.OpenChannelAsync("DB", "SCHEMA", "PIPE", "my_channel", dropOnDispose: true);
+var next = await ch.AppendRowsAsync(new [] { new { id = 1 } });
+await ch.WaitForCommitAsync(next);
+```
 
 ## Lifecycle and Channels
 - Use `OpenChannelAsync(..., dropOnDispose: true)` to get an `await using`-friendly `Channel` that automatically waits for the latest continuation token to commit and then drops the channel server-side upon disposal. This is ideal for ephemeral jobs and tests.
@@ -31,6 +57,7 @@ See `./quickstart.md` for an end-to-end sample.
 ## API Overview
 
 SnowpipeClient (control + ingest wiring)
+- `SnowpipeClient(Uri accountUrl, IAccountTokenProvider provider, ...)` — Use a custom account-host token provider (e.g., key-pair JWT) for account endpoints.
 - `Task<string> GetHostnameAsync(...)` — Discover ingest host for the account.
   - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#get-hostname
 - `Task ExchangeScopedTokenAsync(string hostname, ...)` — Exchange JWT for scoped token; sets ingest base URI.
@@ -58,7 +85,13 @@ SnowpipeChannel (ergonomic per-channel API)
 
 Notes
 - Headers: account endpoints send `Authorization: Bearer <jwt>` + `X-Snowflake-Authorization-Token-Type: JWT`; ingest endpoints send `Authorization: Bearer <scoped>` + `X-Snowflake-Authorization-Token-Type: OAuth`.
+  - When using key pair auth provider, account endpoints send `X-Snowflake-Authorization-Token-Type: KEYPAIR_JWT`.
 - Content types: token exchange uses `application/x-www-form-urlencoded`; append rows uses `application/x-ndjson` with `continuationToken` query.
+
+Security notes
+- Do not log private keys or passphrases. Avoid writing secrets to disk.
+- JWT lifetime is capped at 1 hour by Snowflake; the provider refreshes before expiry.
+- Ensure system clocks are reasonably synchronized to avoid iat/exp validation issues.
 
 Example:
 ```csharp
