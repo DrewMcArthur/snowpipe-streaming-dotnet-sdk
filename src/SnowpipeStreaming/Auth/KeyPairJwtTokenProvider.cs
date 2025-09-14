@@ -43,7 +43,7 @@ public sealed class KeyPairJwtTokenProvider : IAccountTokenProvider
             // Parse exp to compute freshness window
             var parts = jwt.Split('.');
             if (parts.Length != 3) throw new InvalidOperationException("Generated JWT is invalid");
-            var payloadJson = System.Text.Encoding.UTF8.GetString(FromBase64Url(parts[1]));
+            var payloadJson = System.Text.Encoding.UTF8.GetString(SnowpipeStreaming.Util.Base64Url.Decode(parts[1]));
             using var doc = JsonDocument.Parse(payloadJson);
             var exp = doc.RootElement.GetProperty("exp").GetInt64();
             _expiresAt = DateTimeOffset.FromUnixTimeSeconds(exp);
@@ -52,14 +52,5 @@ public sealed class KeyPairJwtTokenProvider : IAccountTokenProvider
         }
     }
 
-    private static byte[] FromBase64Url(string s)
-    {
-        string padded = s.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2: padded += "=="; break;
-            case 3: padded += "="; break;
-        }
-        return Convert.FromBase64String(padded);
-    }
+    
 }

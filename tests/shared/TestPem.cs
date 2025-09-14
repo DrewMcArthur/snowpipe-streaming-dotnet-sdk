@@ -15,6 +15,5 @@ internal static class TestPem
         return sb.ToString();
     }
 
-    public static string Pem(string type, byte[] data) => ToPem(type, data);
+    
 }
-

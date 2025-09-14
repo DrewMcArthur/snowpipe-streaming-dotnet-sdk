@@ -25,7 +25,7 @@ public class JwtGeneratorTests
         var parts = jwt.Split('.');
         parts.Length.Should().Be(3);
 
-        var payloadJson = System.Text.Encoding.UTF8.GetString(FromBase64Url(parts[1]));
+        var payloadJson = System.Text.Encoding.UTF8.GetString(SnowpipeStreaming.Util.Base64Url.Decode(parts[1]));
         using var doc = JsonDocument.Parse(payloadJson);
         var iss = doc.RootElement.GetProperty("iss").GetString();
         var sub = doc.RootElement.GetProperty("sub").GetString();
@@ -37,7 +37,7 @@ public class JwtGeneratorTests
 
         // Verify signature
         var signed = System.Text.Encoding.ASCII.GetBytes(parts[0] + "." + parts[1]);
-        var sig = FromBase64Url(parts[2]);
+        var sig = SnowpipeStreaming.Util.Base64Url.Decode(parts[2]);
         rsa.VerifyData(signed, sig, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1).Should().BeTrue();
     }
 
@@ -53,22 +53,12 @@ public class JwtGeneratorTests
             PrivateKeyPem = pem,
         };
         string jwt = JwtGenerator.GenerateJwt(opts);
-        var payloadJson = System.Text.Encoding.UTF8.GetString(FromBase64Url(jwt.Split('.')[1]));
+        var payloadJson = System.Text.Encoding.UTF8.GetString(SnowpipeStreaming.Util.Base64Url.Decode(jwt.Split('.')[1]));
         using var doc = JsonDocument.Parse(payloadJson);
         doc.RootElement.GetProperty("sub").GetString().Should().Be("XY12345.USER1");
         doc.RootElement.GetProperty("iss").GetString().Should().StartWith("XY12345.USER1.SHA256:");
     }
 
-    
 
-    private static byte[] FromBase64Url(string s)
-    {
-        string padded = s.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2: padded += "=="; break;
-            case 3: padded += "="; break;
-        }
-        return Convert.FromBase64String(padded);
-    }
+
 }

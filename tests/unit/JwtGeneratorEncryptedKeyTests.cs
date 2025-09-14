@@ -34,5 +34,5 @@ public class JwtGeneratorEncryptedKeyTests
         jwt.Should().NotBeNullOrEmpty();
     }
 
-    
+
 }

@@ -87,8 +87,6 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         _logger = logger;
     }
 
-    
-
     /// <summary>
     /// Retrieves the ingest hostname for the current account.
     /// </summary>
