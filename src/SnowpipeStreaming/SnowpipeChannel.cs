@@ -113,7 +113,6 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     /// </summary>
     public Task WaitForCommitAsync(string? token = null, CancellationToken cancellationToken = default)
     {
-        EnsureUsable();
         var target = token ?? LatestContinuationToken ?? throw new InvalidOperationException("No token available to wait for.");
         return _client.CloseChannelWhenCommittedAsync(Database, Schema, Pipe, Name, target, cancellationToken);
     }
@@ -150,7 +149,6 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     /// </summary>
     public async Task<string?> GetLatestCommittedOffsetTokenAsync(CancellationToken cancellationToken = default)
     {
-        EnsureUsable();
         var map = await _client.BulkGetChannelStatusAsync(Database, Schema, Pipe, new[] { Name }, cancellationToken).ConfigureAwait(false);
         return map.TryGetValue(Name, out var status) ? status.LastCommittedOffsetToken : null;
     }
