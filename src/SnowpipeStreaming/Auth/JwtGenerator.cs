@@ -42,12 +42,12 @@ public static class JwtGenerator
             exp = exp.ToUnixTimeSeconds()
         };
 
-        string headerB64 = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(header));
-        string payloadB64 = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload));
+        string headerB64 = SnowpipeStreaming.Util.Base64Url.Encode(JsonSerializer.SerializeToUtf8Bytes(header));
+        string payloadB64 = SnowpipeStreaming.Util.Base64Url.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
         var signingInput = Encoding.ASCII.GetBytes($"{headerB64}.{payloadB64}");
 
         byte[] signature = rsa.SignData(signingInput, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        string sigB64 = Base64UrlEncode(signature);
+        string sigB64 = SnowpipeStreaming.Util.Base64Url.Encode(signature);
         return $"{headerB64}.{payloadB64}.{sigB64}";
     }
 
@@ -79,9 +79,5 @@ public static class JwtGenerator
         return rsa;
     }
 
-    private static string Base64UrlEncode(ReadOnlySpan<byte> data)
-    {
-        string b64 = Convert.ToBase64String(data);
-        return b64.Replace('+', '-').Replace('/', '_').TrimEnd('=');
-    }
+    
 }
