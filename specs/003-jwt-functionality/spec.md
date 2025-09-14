@@ -1,9 +1,9 @@
-# Feature Specification: JWT Functionality
+# Feature Specification: JWT Key Pair Authentication
 
 **Feature Branch**: `003-jwt-functionality`  
 **Created**: 2025-09-14  
-**Status**: Draft  
-**Input**: User description: "jwt functionality"
+**Status**: Ready  
+**Input**: Provide key‑pair based authentication that generates the JWT inside the application using a private key and static identifiers pulled from cloud secrets (no manual JWT generation).
 
 ## Execution Flow (main)
 ```
@@ -55,35 +55,40 @@ When creating this spec from a user prompt:
 ## User Scenarios & Testing *(mandatory)*
 
 ### Primary User Story
-As an SDK consumer, I need clear, reliable JWT handling to authenticate Snowpipe Streaming requests so I can securely exchange my JWT for a scoped token and keep data ingestion working without manual token management.
+As a platform operator running this SDK in cloud environments, I want the application to authenticate to Snowflake using key pair authentication by generating the JWT in memory from a private key and static identifiers sourced from secrets, so that no manual token generation or on‑disk artifacts are required.
 
 ### Acceptance Scenarios
-1. Given a valid user-provided JWT and account URL, When the client requests an exchange, Then a scoped token is obtained and used for subsequent ingest operations.
-2. Given an expired or malformed JWT, When exchange is attempted, Then the client returns a clear unauthorized/bad-request error including useful identifiers.
-3. Given a near-expiring scoped token, When an ingest operation is attempted, Then the client proactively handles token freshness or reports a clear error if refresh is required by the environment.
-4. Given transient errors during token exchange, When retries are allowed, Then the client retries with backoff and surfaces a clear error if attempts are exhausted.
+1. Given account identifier, user name, and a private key (optionally encrypted) provided via secret configuration, When the app starts, Then it generates a JWT in memory and successfully calls Snowflake REST endpoints without storing the JWT on disk.
+2. Given only the private key and identifiers, When generating the JWT, Then the system derives the SHA-256 public key fingerprint and constructs the payload with the correct fields: iss = ACCOUNT.USER.SHA256:<fingerprint>, sub = ACCOUNT.USER, iat = now, exp ≤ now+1h, with ACCOUNT and USER uppercased.
+3. Given malformed identifiers (lowercase, region‑qualified account locator, etc.), When JWT is generated, Then the system normalizes as needed (uppercase ACCOUNT and USER, and exclude region from account locator) or returns a clear error if normalization is not possible.
+4. Given an encrypted private key and passphrase, When generating the JWT, Then the system unlocks the key securely in memory and never logs or persists secrets.
+5. Given transient clock skew (±5 minutes), When calling Snowflake endpoints, Then the request succeeds or produces a clear error indicating not‑yet‑valid/expired JWT.
+6. Given concurrent requests, When multiple operations need a JWT, Then a single valid token is reused while fresh, or regenerated when expiring, without races.
+7. For requests using key pair authentication, Then the Authorization header is "Bearer <jwt>" and the optional header X‑Snowflake‑Authorization‑Token‑Type is set to KEYPAIR_JWT.
 
 ### Edge Cases
-- JWT clock skew leads to not-yet-valid or just-expired tokens; behavior is predictable and clearly reported.
-- Multiple concurrent operations do not result in duplicate or conflicting token exchanges.
-- Token scopes map correctly to the ingest hostname; mismatched scopes fail with clear unauthorized errors.
+- Missing/incorrect passphrase for encrypted key yields a clear error without leaking secret material.
+- The RSA public key fingerprint cannot be computed; the system surfaces a clear error and guidance.
+- Excessive JWT lifetime requested (>1h) is capped to 1h; a warning or clear behavior is documented.
+- Concurrency: threads attempting to obtain a JWT do not perform redundant work.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
-- **FR-001**: The system MUST accept a caller-provided JWT and account URL to initiate authentication.
-- **FR-002**: The system MUST exchange the JWT for a scoped token bound to the ingest hostname.
-- **FR-003**: The system MUST apply the scoped token to subsequent ingest requests.
-- **FR-004**: The system MUST surface clear, actionable errors for unauthorized, malformed, or expired tokens, including request identifiers when available.
-- **FR-005**: The system MUST avoid redundant concurrent exchanges and ensure thread-safe access to token state.
-- **FR-006**: The system MUST retry transient failures (e.g., rate limiting, 5xx) with bounded exponential backoff during exchange.
-- **FR-007**: The system MUST handle scope/hostname mismatches by failing fast with a clear unauthorized error.
-- **FR-008**: The system SHOULD allow callers to refresh or re-exchange tokens without restarting the client [NEEDS CLARIFICATION: automatic vs. caller-driven refresh].
-- **FR-009**: The system SHOULD clearly document token lifetime expectations and any required clock tolerance [NEEDS CLARIFICATION: exact tolerance window].
+- **FR-001**: The system MUST generate a JWT in application code using key pair authentication based on Snowflake guidance.
+- **FR-002**: The JWT payload MUST include: iss = ACCOUNT.USER.SHA256:<public_key_fingerprint>, sub = ACCOUNT.USER, iat = current UTC, exp ≤ iat + 1 hour; ACCOUNT and USER must be uppercase.
+- **FR-003**: The system MUST compute the SHA‑256 fingerprint of the public key derived from the provided private key; a pre‑computed fingerprint MAY be accepted but is not required.
+- **FR-004**: The system MUST support encrypted PKCS#8 private keys via a passphrase.
+- **FR-005**: The system MUST accept static configuration from secret stores or environment (account identifier, user, private key contents or path, optional passphrase, optional fingerprint) and avoid persisting secrets.
+- **FR-006**: The system MUST set Authorization: Bearer <jwt> and SHOULD set X‑Snowflake‑Authorization‑Token‑Type: KEYPAIR_JWT on account‑host requests.
+- **FR-007**: The system MUST handle clock skew and token freshness (e.g., refresh or regenerate shortly before expiration) and ensure thread‑safe reuse.
+- **FR-008**: The system MUST provide clear, actionable errors for invalid key, invalid fingerprint, malformed identifiers, or time window violations.
+- **FR-009**: The system SHOULD provide ergonomic configuration helpers for cloud secret providers (env vars first; provider abstraction optional).
 
 ### Key Entities *(include if feature involves data)*
-- **JWT**: Caller-provided credential used to request a scoped token.
-- **Scoped Token**: Authorization credential bound to an ingest hostname for streaming operations.
+- **Private Key**: PKCS#8 RSA private key material (optionally encrypted) provided via secret configuration.
+- **JWT**: Token generated in app with required claims and used for Authorization on account endpoints.
+- **Public Key Fingerprint**: SHA‑256 fingerprint of the corresponding RSA public key, prefixed with "SHA256:".
 
 ---
 
@@ -91,13 +96,13 @@ As an SDK consumer, I need clear, reliable JWT handling to authenticate Snowpipe
 *GATE: Automated checks run during main() execution*
 
 ### Content Quality
-- [x] No implementation details (languages, frameworks, APIs)
-- [x] Focused on user value and business needs
+- [x] No low‑level implementation details (libraries, classes); claims and header requirements are functional constraints.
+- [x] Focused on user value and operational needs in cloud environments
 - [x] Written for non-technical stakeholders
 - [x] All mandatory sections completed
 
 ### Requirement Completeness
-- [x] No [NEEDS CLARIFICATION] markers remain (except as noted)
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous  
 - [x] Success criteria are measurable
 - [x] Scope is clearly bounded

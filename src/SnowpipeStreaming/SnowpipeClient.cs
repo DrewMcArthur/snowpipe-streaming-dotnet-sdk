@@ -25,6 +25,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
 
     private string? _scopedToken;
     private Uri? _ingestBaseUri;
+    private SnowpipeStreaming.Auth.IAccountTokenProvider? _accountTokenProvider;
 
     // Expose logger to internal collaborators (e.g., SnowpipeChannel) without leaking publicly.
     internal ILogger? Logger => _logger;
@@ -58,6 +59,33 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
+    /// Creates a Snowpipe Streaming client bound to an account URL and a custom account-host token provider
+    /// (e.g., key-pair JWT provider). Ingest calls still use the scoped token after exchange.
+    /// </summary>
+    public SnowpipeClient(Uri accountUrl, SnowpipeStreaming.Auth.IAccountTokenProvider accountTokenProvider, HttpMessageHandler? handler = null, ILogger? logger = null)
+    {
+        _accountUrl = accountUrl ?? throw new ArgumentNullException(nameof(accountUrl));
+        _jwt = string.Empty;
+        _accountTokenProvider = accountTokenProvider ?? throw new ArgumentNullException(nameof(accountTokenProvider));
+        if (handler is null)
+        {
+            _http = new HttpClient();
+            _ownsHttp = true;
+        }
+        else
+        {
+            _http = new HttpClient(handler, disposeHandler: false);
+            _ownsHttp = false;
+        }
+        _http.Timeout = TimeSpan.FromSeconds(100);
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("SnowpipeStreaming.NET/0.1.0");
+        _json = Serialization.JsonOptions.Default;
+        _logger = logger;
+    }
+
+    
+
+    /// <summary>
     /// Retrieves the ingest hostname for the current account.
     /// </summary>
     /// <remarks>
@@ -71,8 +99,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         var (resp, body) = await SendWithRetryAsync(() =>
         {
             var req = new HttpRequestMessage(HttpMethod.Get, uri);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
-            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            AddAccountAuth(req, cancellationToken);
             return req;
         }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
@@ -100,8 +127,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
         {
             var content = new StringContent("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&scope=" + Uri.EscapeDataString(hostname), Encoding.UTF8, "application/x-www-form-urlencoded");
             var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
-            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            AddAccountAuth(req, cancellationToken);
             return req;
         }, cancellationToken).ConfigureAwait(false);
         EnsureSuccessOrThrow(resp, body);
@@ -420,6 +446,21 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     {
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _scopedToken);
         req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "OAuth");
+    }
+
+    private void AddAccountAuth(HttpRequestMessage req, CancellationToken cancellationToken)
+    {
+        if (_accountTokenProvider is null)
+        {
+            // Default to caller-provided JWT
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
+            req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", "JWT");
+            return;
+        }
+        var token = _accountTokenProvider.GetTokenAsync(cancellationToken).GetAwaiter().GetResult();
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var tt = _accountTokenProvider.TokenType;
+        if (!string.IsNullOrWhiteSpace(tt)) req.Headers.TryAddWithoutValidation("X-Snowflake-Authorization-Token-Type", tt);
     }
 
     private static Uri Combine(Uri baseUri, string path, string? query = null)

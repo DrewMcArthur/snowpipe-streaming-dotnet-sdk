@@ -2,6 +2,8 @@
 bin/
 obj/
 
+reference/
+
 # VS/IDE
 .vs/
 .vscode/
