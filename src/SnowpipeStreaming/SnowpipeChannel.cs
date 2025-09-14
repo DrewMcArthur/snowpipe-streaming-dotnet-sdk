@@ -3,8 +3,26 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-
 namespace SnowpipeStreaming;
+
+/// <summary>
+/// Represents the lifecycle state of a Snowpipe streaming channel instance.
+/// </summary>
+public enum SnowpipeChannelState
+{
+    /// <summary>
+    /// The channel is active and can be used for appends, waits, and status queries.
+    /// </summary>
+    Open = 0,
+    /// <summary>
+    /// A drop operation has been initiated; further operations are rejected.
+    /// </summary>
+    Dropping = 1,
+    /// <summary>
+    /// The channel has been dropped and is permanently unusable.
+    /// </summary>
+    Dropped = 2,
+}
 
 /// <summary>
 /// A channel bound to a specific database/schema/pipe and channel name. Provides ergonomic append and lifecycle APIs.
@@ -14,6 +32,7 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     private readonly SnowpipeClient _client;
     private readonly bool _dropOnDispose;
     private readonly System.Threading.SemaphoreSlim _appendLock = new(1, 1);
+    private int _state = (int)SnowpipeChannelState.Open;
 
     /// <summary>Database name.</summary>
     public string Database { get; }
@@ -25,6 +44,8 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     public string Name { get; }
     /// <summary>The latest continuation token returned by the service. Updated after each append.</summary>
     public string? LatestContinuationToken { get; internal set; }
+    /// <summary>The current lifecycle state of the channel.</summary>
+    public SnowpipeChannelState State => (SnowpipeChannelState)Volatile.Read(ref _state);
 
     internal SnowpipeChannel(SnowpipeClient client, string database, string schema, string pipe, string name, string? initialContinuationToken, bool dropOnDispose)
     {
@@ -42,6 +63,7 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     /// </summary>
     public async Task<string> AppendRowsAsync(IEnumerable<string> ndjsonLines, string? offsetToken = null, Guid? requestId = null, CancellationToken cancellationToken = default)
     {
+        EnsureUsable();
         if (string.IsNullOrWhiteSpace(LatestContinuationToken)) throw new InvalidOperationException("No continuation token set. Open the channel before appending.");
         await _appendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -59,6 +81,7 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     /// </summary>
     public async Task<string> AppendRowsAsync<T>(IEnumerable<T> rows, string? offsetToken = null, Guid? requestId = null, CancellationToken cancellationToken = default)
     {
+        EnsureUsable();
         if (string.IsNullOrWhiteSpace(LatestContinuationToken)) throw new InvalidOperationException("No continuation token set. Open the channel before appending.");
         await _appendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -97,7 +120,29 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
     /// <summary>
     /// Drops the channel on the server.
     /// </summary>
-    public Task DropAsync(CancellationToken cancellationToken = default) => _client.DropChannelAsync(Database, Schema, Pipe, Name, null, cancellationToken);
+    public async Task DropAsync(CancellationToken cancellationToken = default)
+    {
+        var prev = Interlocked.CompareExchange(ref _state, (int)SnowpipeChannelState.Dropping, (int)SnowpipeChannelState.Open);
+        if ((SnowpipeChannelState)prev == SnowpipeChannelState.Dropped)
+        {
+            return; // idempotent
+        }
+        if ((SnowpipeChannelState)prev == SnowpipeChannelState.Dropping)
+        {
+            return; // another caller already initiated drop
+        }
+        try
+        {
+            await _client.DropChannelInternalAsync(Database, Schema, Pipe, Name, null, cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _state, (int)SnowpipeChannelState.Dropped);
+        }
+        catch
+        {
+            // Restore to Open to allow retry if drop failed
+            Volatile.Write(ref _state, (int)SnowpipeChannelState.Open);
+            throw;
+        }
+    }
 
     /// <summary>
     /// Gets the latest committed offset token for this channel.
@@ -115,8 +160,11 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
         {
             try
             {
-                // Wait for the latest known token to commit, then drop the channel.
-                await WaitForCommitAsync().ConfigureAwait(false);
+                if (State == SnowpipeChannelState.Open)
+                {
+                    // Wait for the latest known token to commit, then drop the channel.
+                    await WaitForCommitAsync().ConfigureAwait(false);
+                }
                 await DropAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -136,8 +184,11 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
             try
             {
                 // Synchronous disposal path: block on async operations.
-                WaitForCommitAsync().GetAwaiter().GetResult();
-                _client.DropChannelAsync(Database, Schema, Pipe, Name).GetAwaiter().GetResult();
+                if (State == SnowpipeChannelState.Open)
+                {
+                    WaitForCommitAsync().GetAwaiter().GetResult();
+                }
+                DropAsync().GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -146,5 +197,12 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
             }
         }
         GC.SuppressFinalize(this);
+    }
+
+    private void EnsureUsable()
+    {
+        var s = State;
+        if (s == SnowpipeChannelState.Dropping || s == SnowpipeChannelState.Dropped)
+            throw new InvalidOperationException("Channel has been dropped or is dropping and can no longer be used.");
     }
 }

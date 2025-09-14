@@ -39,7 +39,8 @@ SnowpipeClient (control + ingest wiring)
   - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#open-channel
 - `Task<IDictionary<string, Models.ChannelStatus>> BulkGetChannelStatusAsync(string database, string schema, string pipe, IEnumerable<string> channelNames, ...)` — Bulk channel status lookup.
   - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#bulk-get-channel-status
-- `Task DropChannelAsync(string database, string schema, string pipe, string channelName, ...)` — Drop a channel.
+- `SnowpipeChannel.DropAsync()` — Drop a channel from the channel instance.
+  - After dropping, the channel enters a terminal state and further operations like `AppendRowsAsync`, `WaitForCommitAsync`, or status checks throw `InvalidOperationException`.
   - Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#drop-channel
 - `Task CloseChannelWhenCommittedAsync(string database, string schema, string pipe, string channelName, string continuationToken, ...)` — Polls bulk status until committed to the given token (used by channel disposal & helpers).
 

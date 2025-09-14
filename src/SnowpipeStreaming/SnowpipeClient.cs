@@ -328,7 +328,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Drops a channel and its metadata on the server.
+    /// Drops a channel and its metadata on the server. Internal use by SnowpipeChannel.
     /// </summary>
     /// <remarks>
     /// Docs: https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-api#drop-channel
@@ -339,7 +339,7 @@ public sealed class SnowpipeClient : IDisposable, IAsyncDisposable
     /// <param name="channelName">Channel name.</param>
     /// <param name="requestId">Optional request identifier (UUID) for tracing.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task DropChannelAsync(
+    internal async Task DropChannelInternalAsync(
         string database,
         string schema,
         string pipe,
