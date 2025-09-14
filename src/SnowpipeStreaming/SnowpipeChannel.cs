@@ -190,7 +190,7 @@ public class SnowpipeChannel : IAsyncDisposable, IDisposable
                 {
                     WaitForCommitAsync().GetAwaiter().GetResult();
                 }
-                _client.DropChannelInternalAsync(Database, Schema, Pipe, Name).GetAwaiter().GetResult();
+                DropAsync().GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
